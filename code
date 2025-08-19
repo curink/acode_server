@@ -1,0 +1,111 @@
+#!/bin/bash
+
+# Path untuk log files
+AXS_LOG="$HOME/axs.log"
+ACODE_LS_LOG="$HOME/acode-ls.log"
+
+# Fungsi utilitas
+is_process_running() {
+    pgrep -f "$1" >/dev/null
+}
+
+is_installed() {
+    command -v "$1" &>/dev/null
+}
+
+confirm_install() {
+    read -p "$1 (y/n)? " choice
+    case "$choice" in 
+      y|Y ) return 0;;
+      * ) return 1;;
+    esac
+}
+
+install_package() {
+    echo "🔧 Installing $1..."
+    if npm install -g "$1"; then
+        echo "✅ $1 installed successfully"
+        return 0
+    else
+        echo "❌ Failed to install $1"
+        return 1
+    fi
+}
+
+# Cek dan instal Node.js jika belum ada
+if ! is_installed "node"; then
+    echo "Node.js is not installed"
+    if confirm_install "Install Node.js using apt"; then
+         apt update && apt upgrade -y
+         apt install nodejs -y
+        echo "✅ Node.js $(node -v) installed"
+    else
+        echo "❌ Node.js is required"
+        exit 1
+    fi
+fi
+
+echo "✅ Dependencies: Node.js $(node -v), npm $(npm -v)"
+
+# Cek dan instal axs jika belum ada
+if ! is_installed "axs"; then
+    echo "axs is not installed"
+    if confirm_install "Install axs via curl installer"; then
+        echo "🔧 Installing axs..."
+        if curl -L https://raw.githubusercontent.com/bajrangCoder/acodex_server/main/install.sh | bash; then
+            axs update
+            echo "✅ axs installed successfully"
+        else
+            echo "❌ Failed to install axs"
+            exit 1
+        fi
+    else
+        echo "❌ axs is required"
+        exit 1
+    fi
+fi
+
+# Cek dan instal acode-ls jika belum ada
+if ! is_installed "acode-ls"; then
+    echo "acode-ls is not installed"
+    if confirm_install "Install acode-ls globally using npm"; then
+        if ! install_package "acode-lsp"; then
+            exit 1
+        fi
+    else
+        echo "❌ acode-ls is required"
+        exit 1
+    fi
+fi
+
+echo "✅ All packages installed: axs & acode-ls"
+
+# Proses axs
+if ! is_process_running "axs"; then
+    fuser -k 8767/tcp 2>/dev/null
+    echo "🚀 Starting axs..."
+    axs > "$AXS_LOG" 2>&1 &
+    echo "✅ axs started on 8767 (log: $AXS_LOG)"
+else
+    echo "ℹ️  axs is already running"
+fi
+
+sleep 2
+
+# Proses acode-ls
+if is_process_running "acode-ls"; then
+    echo "ℹ️  acode-ls is already running"
+else
+    fuser -k 3030/tcp 2>/dev/null
+    echo "🚀 Starting acode-ls..."
+    nohup acode-ls > "$ACODE_LS_LOG" 2>&1 &
+    echo "✅ acode-ls started on 3030 (log: $ACODE_LS_LOG)"
+fi
+
+sleep 2
+
+# Launch Acode
+echo "📱 Launching Acode..."
+am start -n com.foxdebug.acode/com.foxdebug.acode.MainActivity
+
+echo "✨ All done! Happy coding!"
